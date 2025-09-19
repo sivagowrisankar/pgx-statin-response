@@ -1,6 +1,10 @@
 import pandas as pd
 import numpy as np
 import random
+import os
+from datetime import date, timedelta
+
+# --- Phenotype Assignment Functions (Used for simulation logic) ---
 
 def assign_slco1b1_phenotype(genotype):
     """Maps SLCO1B1 genotype to a functional phenotype."""
@@ -47,132 +51,113 @@ def assign_cyp3a5_phenotype(genotype):
     else: # *1/*1
         return 'Normal Metabolizer' # Expressor
 
-def generate_synthetic_data(num_patients=150):
+def generate_synthetic_data_files(num_patients=150):
     """
-    Generates a synthetic dataset for statin pharmacogenomics.
+    Generates and structures synthetic data into clinical, labs, and meds DataFrames.
 
     Args:
         num_patients (int): The number of patients to generate.
 
     Returns:
-        pandas.DataFrame: A DataFrame with synthetic patient data.
+        tuple: A tuple containing three pandas DataFrames: 
+               (clinical_df, labs_df, meds_df).
     """
-    data = []
-    
-    # Define genotype frequencies (approximations for a general population)
+    clinical_data = []
+    labs_data = []
+    meds_data = []
+
+    # --- Genotype Frequencies (for simulation) ---
     slco1b1_genotypes = ['CC'] * 70 + ['CT'] * 25 + ['TT'] * 5
     cyp2c9_genotypes = ['*1/*1'] * 75 + ['*1/*2'] * 12 + ['*1/*3'] * 8 + ['*2/*2', '*2/*3', '*3/*3'] * 5
     abcg2_genotypes = ['CC'] * 70 + ['CA'] * 25 + ['AA'] * 5
     cyp3a4_genotypes = ['*1/*1'] * 90 + ['*1/*22'] * 10
-    cyp3a5_genotypes = ['*3/*3'] * 85 + ['*1/*3'] * 14 + ['*1/*1'] * 1 # Most are non-expressors
+    cyp3a5_genotypes = ['*3/*3'] * 85 + ['*1/*3'] * 14 + ['*1/*1'] * 1
 
     for i in range(num_patients):
         patient_id = f"PAT_{1000 + i}"
         age = np.random.randint(45, 76)
         sex = random.choice(['M', 'F'])
         bmi = round(np.random.normal(28.5, 4.5), 1)
-
-        # --- Generate Genotypes and Phenotypes ---
-        slco1b1_gt = random.choice(slco1b1_genotypes)
-        cyp2c9_gt = random.choice(cyp2c9_genotypes)
-        abcg2_gt = random.choice(abcg2_genotypes)
-        cyp3a4_gt = random.choice(cyp3a4_genotypes)
-        cyp3a5_gt = random.choice(cyp3a5_genotypes)
-
-        slco1b1_pheno = assign_slco1b1_phenotype(slco1b1_gt)
-        cyp2c9_pheno = assign_cyp2c9_phenotype(cyp2c9_gt)
-        abcg2_pheno = assign_abcg2_phenotype(abcg2_gt)
-        cyp3a4_pheno = assign_cyp3a4_phenotype(cyp3a4_gt)
-        cyp3a5_pheno = assign_cyp3a5_phenotype(cyp3a5_gt)
-
-        # --- Simulate LDL levels based on genotypes ---
-        # Start with a baseline LDL
-        baseline_ldl = round(np.random.normal(160, 30))
         
-        # Simulate Statin Response (% LDL reduction)
-        # Base response is around 40% reduction
+        # --- Append Clinical Data ---
+        clinical_data.append({'id': patient_id, 'age': age, 'sex': sex, 'bmi': bmi})
+
+        # --- Simulate PGx-based LDL Response ---
+        # (This logic is kept to make the lab values realistic)
+        slco1b1_pheno = assign_slco1b1_phenotype(random.choice(slco1b1_genotypes))
+        cyp2c9_pheno = assign_cyp2c9_phenotype(random.choice(cyp2c9_genotypes))
+        abcg2_pheno = assign_abcg2_phenotype(random.choice(abcg2_genotypes))
+        cyp3a4_pheno = assign_cyp3a4_phenotype(random.choice(cyp3a4_genotypes))
+        cyp3a5_pheno = assign_cyp3a5_phenotype(random.choice(cyp3a5_genotypes))
+
+        baseline_ldl = round(np.random.normal(160, 30))
         base_reduction = np.random.normal(0.40, 0.05)
         
-        # Modify reduction based on PGx phenotypes
-        # SLCO1B1 Poor Function -> less effective response (less reduction)
-        if slco1b1_pheno == 'Poor Function':
-            base_reduction -= 0.15 
-        elif slco1b1_pheno == 'Decreased Function':
-            base_reduction -= 0.07
+        if slco1b1_pheno == 'Poor Function': base_reduction -= 0.15 
+        elif slco1b1_pheno == 'Decreased Function': base_reduction -= 0.07
+        if cyp2c9_pheno == 'Poor Metabolizer': base_reduction += 0.12
+        elif cyp2c9_pheno == 'Intermediate Metabolizer': base_reduction += 0.06
+        if abcg2_pheno == 'Poor Function': base_reduction += 0.08
+        elif abcg2_pheno == 'Decreased Function': base_reduction += 0.04
+        if cyp3a4_pheno == 'Intermediate Metabolizer': base_reduction += 0.05
+        if cyp3a5_pheno == 'Normal Metabolizer': base_reduction -= 0.07
+        elif cyp3a5_pheno == 'Intermediate Metabolizer': base_reduction -= 0.04
 
-        # CYP2C9 Poor Metabolizer -> more drug exposure, greater response (more reduction)
-        if cyp2c9_pheno == 'Poor Metabolizer':
-            base_reduction += 0.12
-        elif cyp2c9_pheno == 'Intermediate Metabolizer':
-            base_reduction += 0.06
-            
-        # ABCG2 Poor Function -> increased statin exposure -> greater response
-        if abcg2_pheno == 'Poor Function':
-            base_reduction += 0.08
-        elif abcg2_pheno == 'Decreased Function':
-            base_reduction += 0.04
-        
-        # CYP3A4 Intermediate Metabolizer -> increased statin exposure -> greater response
-        if cyp3a4_pheno == 'Intermediate Metabolizer':
-            base_reduction += 0.05
-
-        # CYP3A5 Expressors (*1 allele) -> faster metabolism -> less response
-        if cyp3a5_pheno == 'Normal Metabolizer':
-            base_reduction -= 0.07
-        elif cyp3a5_pheno == 'Intermediate Metabolizer':
-            base_reduction -= 0.04
-
-        # Ensure reduction is within a plausible range (e.g., 5% to 65%)
         percent_ldl_reduction = np.clip(base_reduction, 0.05, 0.65)
-        
-        # Calculate on-statin LDL
         on_statin_ldl = round(baseline_ldl * (1 - percent_ldl_reduction))
-        
-        data.append({
-            'PatientID': patient_id,
-            'Age': age,
-            'Sex': sex,
-            'BMI': bmi,
-            'SLCO1B1_Genotype': slco1b1_gt,
-            'SLCO1B1_Phenotype': slco1b1_pheno,
-            'CYP2C9_Genotype': cyp2c9_gt,
-            'CYP2C9_Phenotype': cyp2c9_pheno,
-            'ABCG2_Genotype': abcg2_gt,
-            'ABCG2_Phenotype': abcg2_pheno,
-            'CYP3A4_Genotype': cyp3a4_gt,
-            'CYP3A4_Phenotype': cyp3a4_pheno,
-            'CYP3A5_Genotype': cyp3a5_gt,
-            'CYP3A5_Phenotype': cyp3a5_pheno,
-            'Baseline_LDL': int(baseline_ldl),
-            'On_Statin_LDL': on_statin_ldl,
-            'Percent_LDL_Reduction': round(percent_ldl_reduction * 100, 1)
-        })
 
-    df = pd.DataFrame(data)
+        # --- Fabricate Dates for Timeline ---
+        start_date = date(2023, random.randint(1, 6), random.randint(1, 28))
+        med_date = start_date + timedelta(days=random.randint(7, 21))
+        follow_up_date = med_date + timedelta(days=random.randint(60, 120))
+
+        # --- Append Labs Data ---
+        labs_data.append({'id': patient_id, 'date': start_date, 'ldl': int(baseline_ldl)})
+        labs_data.append({'id': patient_id, 'date': follow_up_date, 'ldl': int(on_statin_ldl)})
+
+        # --- Append Meds Data ---
+        drug = random.choice(['atorvastatin', 'rosuvastatin', 'simvastatin'])
+        dose = random.choice(['10mg', '20mg', '40mg'])
+        meds_data.append({'id': patient_id, 'date': med_date, 'drug': drug, 'dose': dose})
     
-    # Reorder columns for better readability
-    column_order = [
-        'PatientID', 'Age', 'Sex', 'BMI', 
-        'Baseline_LDL', 'On_Statin_LDL', 'Percent_LDL_Reduction',
-        'SLCO1B1_Genotype', 'SLCO1B1_Phenotype', 
-        'CYP2C9_Genotype', 'CYP2C9_Phenotype', 
-        'ABCG2_Genotype', 'ABCG2_Phenotype',
-        'CYP3A4_Genotype', 'CYP3A4_Phenotype',
-        'CYP3A5_Genotype', 'CYP3A5_Phenotype'
-    ]
-    
-    return df[column_order]
+    # --- Create DataFrames ---
+    clinical_df = pd.DataFrame(clinical_data)
+    labs_df = pd.DataFrame(labs_data)
+    meds_df = pd.DataFrame(meds_data)
+
+    return clinical_df, labs_df, meds_df
 
 if __name__ == '__main__':
-    # Generate the data
-    statin_data = generate_synthetic_data(num_patients=150)
+    # Define file paths
+    output_dir = os.path.join('..', 'processed_data')
     
-    # Save to a CSV file
-    output_filename = '../processed_data/synthetic_statin_data.csv'
-    statin_data.to_csv(output_filename, index=False)
-    
-    print(f"Successfully generated synthetic data for {len(statin_data)} patients.")
-    print(f"File saved as '{output_filename}'")
-    print("\nFirst 5 rows of the generated data:")
-    print(statin_data.head())
+    # Create directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"Directory '{output_dir}' is ready.")
 
+    # Generate the data
+    clinical_df, labs_df, meds_df = generate_synthetic_data_files(num_patients=150)
+
+    # Define output file paths
+    clinical_file = os.path.join(output_dir, 'clinical_demo.csv')
+    labs_file = os.path.join(output_dir, 'labs_demo.csv')
+    meds_file = os.path.join(output_dir, 'meds_demo.csv')
+
+    # Save to CSV files
+    clinical_df.to_csv(clinical_file, index=False)
+    print(f"\nSuccessfully generated clinical data for {len(clinical_df)} patients.")
+    print(f"File saved as '{clinical_file}'")
+    print("First 5 rows:")
+    print(clinical_df.head())
+    
+    labs_df.to_csv(labs_file, index=False)
+    print(f"\nSuccessfully generated lab data with {len(labs_df)} entries.")
+    print(f"File saved as '{labs_file}'")
+    print("First 5 rows:")
+    print(labs_df.head())
+
+    meds_df.to_csv(meds_file, index=False)
+    print(f"\nSuccessfully generated medication data for {len(meds_df)} patients.")
+    print(f"File saved as '{meds_file}'")
+    print("First 5 rows:")
+    print(meds_df.head())
