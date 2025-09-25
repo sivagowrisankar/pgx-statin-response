@@ -1,0 +1,6 @@
+name: cohort_settings
+description: Configuration for cohort selection and processing
+min_age: 18
+max_age: 85
+baseline_window_days: [-180, 0] # Days relative to index date
+followup_window_days: [30, 120] # Days relative to index date

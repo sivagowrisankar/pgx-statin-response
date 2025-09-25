@@ -1,0 +1,6 @@
+name: Paths configuration
+demo_raw_dir: data_demo/raw/
+demo_interim_dir: data_demo/interim/
+demo_processed_dir: data_demo/processed_data/
+outputs_dir: outputs/
+reports_dir: reports/
